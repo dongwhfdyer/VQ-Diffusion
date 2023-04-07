@@ -20,5 +20,4 @@ class BaseEmbedding(nn.Module):
         if not self.trainable:
             for pn, p in self.named_parameters():
                 p.requires_grad = False
-            self.eval()   
-
+            self.eval()

@@ -3,7 +3,7 @@ from torch import nn
 
 
 class BaseCodec(nn.Module):
-    
+
     def get_tokens(self, x, **kwargs):
         """
         Input: 

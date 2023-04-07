@@ -161,7 +161,7 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
     return model, _transform(model.input_resolution.item())
 
 
-def tokenize(texts: Union[str, List[str]], context_length: int = 77, 
+def tokenize(texts: Union[str, List[str]], context_length: int = 77,
              add_start_and_end: bool = True, with_mask: bool = True,
              pad_value: int = 0, tokenizer=None, just_token: bool = False) -> torch.LongTensor:
     """
@@ -213,6 +213,3 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77,
     if with_mask:
         results['mask'] = mask
     return results
-
-
-

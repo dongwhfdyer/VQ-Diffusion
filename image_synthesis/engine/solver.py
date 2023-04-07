@@ -22,13 +22,14 @@ from image_synthesis.utils.misc import get_model_parameters_info
 from image_synthesis.engine.lr_scheduler import ReduceLROnPlateauWithWarmup, CosineAnnealingLRWithWarmup
 from image_synthesis.engine.ema import EMA
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
+
 try:
     from torch.cuda.amp import autocast, GradScaler
+
     AMP = True
 except:
     print('Warning: import torch.amp failed, so no amp will be used!')
     AMP = False
-
 
 STEP_WITH_LOSS_SCHEDULERS = (ReduceLROnPlateauWithWarmup, ReduceLROnPlateau)
 
@@ -37,10 +38,10 @@ class Solver(object):
     def __init__(self, config, args, model, dataloader, logger):
         self.config = config
         self.args = args
-        self.model = model 
+        self.model = model
         self.dataloader = dataloader
         self.logger = logger
-        
+
         self.max_epochs = config['solver']['max_epochs']
         self.save_epochs = config['solver']['save_epochs']
         self.save_iterations = config['solver'].get('save_iterations', -1)
@@ -107,7 +108,7 @@ class Solver(object):
             self.scaler = GradScaler()
             self.logger.log_info('Using AMP for training!')
 
-        self.logger.log_info("{}: global rank {}: prepare solver done!".format(self.args.name,self.args.global_rank), check_primary=False)
+        self.logger.log_info("{}: global rank {}: prepare solver done!".format(self.args.name, self.args.global_rank), check_primary=False)
 
     def _get_optimizer_and_scheduler(self, op_sc_list):
         optimizer_and_scheduler = {}
@@ -126,7 +127,7 @@ class Solver(object):
             else:
                 # NOTE: get the parameters with the given name, the parameters() should be overide
                 parameters = self.model.parameters(name=op_sc['name'])
-            
+
             # build optimizer
             op_cfg = op_sc_cfg.get('optimizer', {'target': 'torch.optim.SGD', 'params': {}})
             if 'params' not in op_cfg:
@@ -161,16 +162,16 @@ class Solver(object):
         return optimizer_and_scheduler
 
     def _get_lr(self, return_type='str'):
-        
+
         lrs = {}
         for op_sc_n, op_sc in self.optimizer_and_scheduler.items():
             lr = op_sc['optimizer']['module'].state_dict()['param_groups'][0]['lr']
-            lrs[op_sc_n+'_lr'] = round(lr, 10)
+            lrs[op_sc_n + '_lr'] = round(lr, 10)
         if return_type == 'str':
             lrs = str(lrs)
-            lrs = lrs.replace('none', 'lr').replace('{', '').replace('}','').replace('\'', '')
+            lrs = lrs.replace('none', 'lr').replace('{', '').replace('}', '').replace('\'', '')
         elif return_type == 'dict':
-            pass 
+            pass
         else:
             raise ValueError('Unknow of return type: {}'.format(return_type))
         return lrs
@@ -183,13 +184,13 @@ class Solver(object):
             suffix = '_ema'
         else:
             suffix = ''
-        
+
         if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
             model = self.model.module
-        else:  
-            model = self.model 
-            
-        with torch.no_grad(): 
+        else:
+            model = self.model
+
+        with torch.no_grad():
             if self.debug == False:
                 if self.args.amp:
                     with autocast():
@@ -203,11 +204,11 @@ class Solver(object):
             for k, v in samples.items():
                 save_dir = os.path.join(self.image_dir, phase, k)
                 os.makedirs(save_dir, exist_ok=True)
-                save_path = os.path.join(save_dir, 'e{:010d}_itr{:010d}_rank{}{}'.format(self.last_epoch, self.last_iter%self.dataloader['train_iterations'], get_rank(), suffix))
-                if torch.is_tensor(v) and v.dim() == 4 and v.shape[1] in [1, 3]: # image
+                save_path = os.path.join(save_dir, 'e{:010d}_itr{:010d}_rank{}{}'.format(self.last_epoch, self.last_iter % self.dataloader['train_iterations'], get_rank(), suffix))
+                if torch.is_tensor(v) and v.dim() == 4 and v.shape[1] in [1, 3]:  # image
                     im = v
                     im = im.to(torch.uint8)
-                    self.logger.add_images(tag='{}/{}e_{}itr/{}'.format(phase, self.last_epoch, self.last_iter%self.dataloader['train_iterations'], k), img_tensor=im, global_step=step, dataformats='NCHW')
+                    self.logger.add_images(tag='{}/{}e_{}itr/{}'.format(phase, self.last_epoch, self.last_iter % self.dataloader['train_iterations'], k), img_tensor=im, global_step=step, dataformats='NCHW')
 
                     # save images
                     im_grid = torchvision.utils.make_grid(im)
@@ -215,21 +216,21 @@ class Solver(object):
                     im_grid = Image.fromarray(im_grid)
 
                     im_grid.save(save_path + '.jpg')
-                    self.logger.log_info('save {} to {}'.format(k, save_path+'.jpg'))
-                else: # may be other values, such as text caption
-                    with open(save_path+'.txt', 'a') as f:
-                        f.write(str(v)+'\n')
+                    self.logger.log_info('save {} to {}'.format(k, save_path + '.jpg'))
+                else:  # may be other values, such as text caption
+                    with open(save_path + '.txt', 'a') as f:
+                        f.write(str(v) + '\n')
                         f.close()
-                    self.logger.log_info('save {} to {}'.format(k, save_path+'txt'))
-        
+                    self.logger.log_info('save {} to {}'.format(k, save_path + 'txt'))
+
         if self.ema is not None:
             self.ema.modify_to_train()
-        
+
         self.logger.log_info('Sample done, time: {:.2f}'.format(time.time() - tic))
 
     def step(self, batch, phase='train'):
         loss = {}
-        if self.debug == False: 
+        if self.debug == False:
             for k, v in batch.items():
                 if torch.is_tensor(v):
                     batch[k] = v.cuda()
@@ -251,7 +252,7 @@ class Solver(object):
                 'batch': batch,
                 'return_loss': True,
                 'step': self.last_iter,
-                }
+            }
             if op_sc_n != 'none':
                 input['name'] = op_sc_n
 
@@ -268,7 +269,7 @@ class Solver(object):
                             output = self.model(**input)
                     else:
                         output = self.model(**input)
-            
+
             if phase == 'train':
                 if op_sc['optimizer']['step_iteration'] > 0 and (self.last_iter + 1) % op_sc['optimizer']['step_iteration'] == 0:
                     op_sc['optimizer']['module'].zero_grad()
@@ -283,7 +284,7 @@ class Solver(object):
                         if self.clip_grad_norm is not None:
                             self.clip_grad_norm(self.model.parameters())
                         op_sc['optimizer']['module'].step()
-                    
+
                 if 'scheduler' in op_sc:
                     if op_sc['scheduler']['step_iteration'] > 0 and (self.last_iter + 1) % op_sc['scheduler']['step_iteration'] == 0:
                         if isinstance(op_sc['scheduler']['module'], STEP_WITH_LOSS_SCHEDULERS):
@@ -302,7 +303,7 @@ class Solver(object):
             # save with the epoch specified name
             if self.save_iterations > 0:
                 if (self.last_iter + 1) % self.save_iterations == 0:
-                    save = True 
+                    save = True
                 else:
                     save = False
             else:
@@ -310,12 +311,12 @@ class Solver(object):
                     save = (self.last_epoch + 1) % self.save_epochs == 0
                 else:
                     save = (self.last_epoch + 1) in self.save_epochs
-                
+
             if save or force:
                 state_dict = {
                     'last_epoch': self.last_epoch,
                     'last_iter': self.last_iter,
-                    'model': self.model.module.state_dict() if isinstance(self.model, torch.nn.parallel.DistributedDataParallel) else self.model.state_dict() 
+                    'model': self.model.module.state_dict() if isinstance(self.model, torch.nn.parallel.DistributedDataParallel) else self.model.state_dict()
                 }
                 if self.ema is not None:
                     state_dict['ema'] = self.ema.state_dict()
@@ -336,22 +337,22 @@ class Solver(object):
                     optimizer_and_scheduler[op_sc_n] = state_
 
                 state_dict['optimizer_and_scheduler'] = optimizer_and_scheduler
-            
+
                 if save:
                     save_path = os.path.join(self.ckpt_dir, '{}e_{}iter.pth'.format(str(self.last_epoch).zfill(6), self.last_iter))
                     torch.save(state_dict, save_path)
-                    self.logger.log_info('saved in {}'.format(save_path))    
-                
-                # save with the last name
+                    self.logger.log_info('saved in {}'.format(save_path))
+
+                    # save with the last name
                 save_path = os.path.join(self.ckpt_dir, 'last.pth')
-                torch.save(state_dict, save_path)  
-                self.logger.log_info('saved in {}'.format(save_path))    
-        
-    def resume(self, 
-               path=None, # The path of last.pth
-               load_optimizer_and_scheduler=True, # whether to load optimizers and scheduler
-               load_others=True # load other informations
-               ): 
+                torch.save(state_dict, save_path)
+                self.logger.log_info('saved in {}'.format(save_path))
+
+    def resume(self,
+               path=None,  # The path of last.pth
+               load_optimizer_and_scheduler=True,  # whether to load optimizers and scheduler
+               load_others=True  # load other informations
+               ):
         if path is None:
             path = os.path.join(self.ckpt_dir, 'last.pth')
 
@@ -361,13 +362,13 @@ class Solver(object):
             if load_others:
                 self.last_epoch = state_dict['last_epoch']
                 self.last_iter = state_dict['last_iter']
-            
+
             if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
                 try:
                     self.model.module.load_state_dict(state_dict['model'])
                 except:
                     model_dict = self.model.module.state_dict()
-                    temp_state_dict = {k:v for k,v in state_dict['model'].items() if k in model_dict.keys()}
+                    temp_state_dict = {k: v for k, v in state_dict['model'].items() if k in model_dict.keys()}
                     model_dict.update(temp_state_dict)
                     self.model.module.load_state_dict(model_dict)
             else:
@@ -378,7 +379,7 @@ class Solver(object):
                     self.ema.load_state_dict(state_dict['ema'])
                 except:
                     model_dict = self.ema.state_dict()
-                    temp_state_dict = {k:v for k,v in state_dict['ema'].items() if k in model_dict.keys()}
+                    temp_state_dict = {k: v for k, v in state_dict['ema'].items() if k in model_dict.keys()}
                     model_dict.update(temp_state_dict)
                     self.ema.load_state_dict(model_dict)
 
@@ -392,13 +393,13 @@ class Solver(object):
                         for kk in op_sc[k]:
                             if kk == 'module' and load_optimizer_and_scheduler:
                                 self.optimizer_and_scheduler[op_sc_n][k][kk].load_state_dict(op_sc[k][kk])
-                            elif load_others: # such as step_iteration, ...
+                            elif load_others:  # such as step_iteration, ...
                                 self.optimizer_and_scheduler[op_sc_n][k][kk] = op_sc[k][kk]
-                    elif load_others: # such as start_epoch, end_epoch, ....
+                    elif load_others:  # such as start_epoch, end_epoch, ....
                         self.optimizer_and_scheduler[op_sc_n][k] = op_sc[k]
-            
+
             self.logger.log_info('Resume from {}'.format(path))
-    
+
     def train_epoch(self):
         self.model.train()
         self.last_epoch += 1
@@ -419,7 +420,7 @@ class Solver(object):
             # logging info
             if self.logger is not None and self.last_iter % self.args.log_frequency == 0:
                 info = '{}: train'.format(self.args.name)
-                info = info + ': Epoch {}/{} iter {}/{}'.format(self.last_epoch, self.max_epochs, self.last_iter%self.dataloader['train_iterations'], self.dataloader['train_iterations'])
+                info = info + ': Epoch {}/{} iter {}/{}'.format(self.last_epoch, self.max_epochs, self.last_iter % self.dataloader['train_iterations'], self.dataloader['train_iterations'])
                 for loss_n, loss_dict in loss.items():
                     info += ' ||'
                     loss_dict = reduce_dict(loss_dict)
@@ -428,7 +429,7 @@ class Solver(object):
                     for k in loss_dict:
                         info += ' | {}: {:.4f}'.format(k, float(loss_dict[k]))
                         self.logger.add_scalar(tag='train/{}/{}'.format(loss_n, k), scalar_value=float(loss_dict[k]), global_step=self.last_iter)
-                
+
                 # log lr
                 lrs = self._get_lr(return_type='dict')
                 for k in lrs.keys():
@@ -437,21 +438,21 @@ class Solver(object):
 
                 # add lr to info
                 info += ' || {}'.format(self._get_lr())
-                    
+
                 # add time consumption to info
                 spend_time = time.time() - self.start_train_time
                 itr_time_avg = spend_time / (self.last_iter + 1)
                 info += ' || data_time: {dt}s | fbward_time: {fbt}s | iter_time: {it}s | iter_avg_time: {ita}s | epoch_time: {et} | spend_time: {st} | left_time: {lt}'.format(
-                        dt=round(data_time, 1),
-                        it=round(time.time() - itr_start, 1),
-                        fbt=round(time.time() - step_start, 1),
-                        ita=round(itr_time_avg, 1),
-                        et=format_seconds(time.time() - epoch_start),
-                        st=format_seconds(spend_time),
-                        lt=format_seconds(itr_time_avg*self.max_epochs*self.dataloader['train_iterations']-spend_time)
-                        )
+                    dt=round(data_time, 1),
+                    it=round(time.time() - itr_start, 1),
+                    fbt=round(time.time() - step_start, 1),
+                    ita=round(itr_time_avg, 1),
+                    et=format_seconds(time.time() - epoch_start),
+                    st=format_seconds(spend_time),
+                    lt=format_seconds(itr_time_avg * self.max_epochs * self.dataloader['train_iterations'] - spend_time)
+                )
                 self.logger.log_info(info)
-            
+
             itr_start = time.time()
 
             # sample
@@ -474,8 +475,8 @@ class Solver(object):
             if isinstance(self.validation_epochs, int):
                 val = (self.last_epoch + 1) % self.validation_epochs == 0
             else:
-                val = (self.last_epoch + 1) in self.validation_epochs        
-        
+                val = (self.last_epoch + 1) in self.validation_epochs
+
         if val:
             if self.args.distributed:
                 self.dataloader['validation_loader'].sampler.set_epoch(self.last_epoch)
@@ -489,7 +490,7 @@ class Solver(object):
                 data_time = time.time() - itr_start
                 step_start = time.time()
                 loss = self.step(batch, phase='val')
-                
+
                 for loss_n, loss_dict in loss.items():
                     loss[loss_n] = reduce_dict(loss_dict)
                 if overall_loss is None:
@@ -498,9 +499,9 @@ class Solver(object):
                     for loss_n, loss_dict in loss.items():
                         for k, v in loss_dict.items():
                             overall_loss[loss_n][k] = (overall_loss[loss_n][k] * itr + loss[loss_n][k]) / (itr + 1)
-                
-                if self.logger is not None and (itr+1) % self.args.log_frequency == 0:
-                    info = '{}: val'.format(self.args.name) 
+
+                if self.logger is not None and (itr + 1) % self.args.log_frequency == 0:
+                    info = '{}: val'.format(self.args.name)
                     info = info + ': Epoch {}/{} | iter {}/{}'.format(self.last_epoch, self.max_epochs, itr, self.dataloader['validation_iterations'])
                     for loss_n, loss_dict in loss.items():
                         info += ' ||'
@@ -508,16 +509,16 @@ class Solver(object):
                         # info = info + ': Epoch {}/{} | iter {}/{}'.format(self.last_epoch, self.max_epochs, itr, self.dataloader['validation_iterations'])
                         for k in loss_dict:
                             info += ' | {}: {:.4f}'.format(k, float(loss_dict[k]))
-                        
+
                     itr_time_avg = (time.time() - epoch_start) / (itr + 1)
                     info += ' || data_time: {dt}s | fbward_time: {fbt}s | iter_time: {it}s | epoch_time: {et} | left_time: {lt}'.format(
-                            dt=round(data_time, 1),
-                            fbt=round(time.time() - step_start, 1),
-                            it=round(time.time() - itr_start, 1),
-                            et=format_seconds(time.time() - epoch_start),
-                            lt=format_seconds(itr_time_avg*(self.dataloader['train_iterations']-itr-1))
-                            )
-                        
+                        dt=round(data_time, 1),
+                        fbt=round(time.time() - step_start, 1),
+                        it=round(time.time() - itr_start, 1),
+                        et=format_seconds(time.time() - epoch_start),
+                        lt=format_seconds(itr_time_avg * (self.dataloader['train_iterations'] - itr - 1))
+                    )
+
                     self.logger.log_info(info)
                 itr_start = time.time()
             # modify here to make sure dataloader['validation_iterations'] is correct
@@ -525,7 +526,7 @@ class Solver(object):
             self.dataloader['validation_iterations'] = itr + 1
 
             if self.logger is not None:
-                info = '{}: val'.format(self.args.name) 
+                info = '{}: val'.format(self.args.name)
                 for loss_n, loss_dict in overall_loss.items():
                     info += '' if loss_n == 'none' else ' {}'.format(loss_n)
                     info += ': Epoch {}/{}'.format(self.last_epoch, self.max_epochs)
@@ -541,9 +542,8 @@ class Solver(object):
         start_epoch = self.last_epoch + 1
         self.start_train_time = time.time()
         self.logger.log_info('{}: global rank {}: start training...'.format(self.args.name, self.args.global_rank), check_primary=False)
-        
+
         for epoch in range(start_epoch, self.max_epochs):
             self.train_epoch()
             self.save(force=True)
             self.validate_epoch()
-

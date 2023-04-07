@@ -9,6 +9,8 @@ import torch
 from image_synthesis.utils.io import write_args, save_config_to_yaml
 from image_synthesis.distributed.distributed import is_primary
 import torch.utils.tensorboard as tensorboard
+
+
 # USE_TENSORBOARD = True
 # try:
 #     import tensorboard
@@ -20,10 +22,10 @@ class Logger(object):
         self.args = args
         self.save_dir = args.save_dir
         self.is_primary = is_primary()
-        
+
         if self.is_primary:
             os.makedirs(self.save_dir, exist_ok=True)
-            
+
             # save the args and config
             self.config_dir = os.path.join(self.save_dir, 'configs')
             os.makedirs(self.config_dir, exist_ok=True)
@@ -33,13 +35,12 @@ class Logger(object):
             log_dir = os.path.join(self.save_dir, 'logs')
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir, exist_ok=True)
-            self.text_writer = open(os.path.join(log_dir, 'log.txt'), 'a') # 'w')
+            self.text_writer = open(os.path.join(log_dir, 'log.txt'), 'a')  # 'w')
             if args.tensorboard:
                 self.log_info('using tensorboard')
-                self.tb_writer = torch.utils.tensorboard.SummaryWriter(log_dir=log_dir) # tensorboard.SummaryWriter(log_dir=log_dir)
+                self.tb_writer = torch.utils.tensorboard.SummaryWriter(log_dir=log_dir)  # tensorboard.SummaryWriter(log_dir=log_dir)
             else:
                 self.tb_writer = None
-            
 
     def save_config(self, config):
         if self.is_primary:
@@ -81,9 +82,7 @@ class Logger(object):
             if self.tb_writer is not None:
                 self.tb_writer.add_images(**kargs)
 
-
     def close(self):
         if self.is_primary:
             self.text_writer.close()
             self.tb_writer.close()
-

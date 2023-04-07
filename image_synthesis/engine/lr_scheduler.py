@@ -6,7 +6,6 @@ from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler, CosineAnnealingLR
 
 
-
 class ReduceLROnPlateauWithWarmup(object):
     """Reduce learning rate when a metric has stopped improving.
     Models often benefit from reducing the learning rate by a factor
@@ -82,7 +81,6 @@ class ReduceLROnPlateauWithWarmup(object):
 
         self.warmup_lr = warmup_lr
         self.warmup = warmup
-        
 
         self.best = None
         self.num_bad_epochs = None
@@ -106,7 +104,7 @@ class ReduceLROnPlateauWithWarmup(object):
             self.warmup_lrs = None
         if self.warmup > self.last_epoch:
             curr_lrs = [group['lr'] for group in self.optimizer.param_groups]
-            self.warmup_lr_steps = [max(0, (self.warmup_lrs[i] - curr_lrs[i])/float(self.warmup)) for i in range(len(curr_lrs))]
+            self.warmup_lr_steps = [max(0, (self.warmup_lrs[i] - curr_lrs[i]) / float(self.warmup)) for i in range(len(curr_lrs))]
         else:
             self.warmup_lr_steps = None
 
@@ -160,7 +158,7 @@ class ReduceLROnPlateauWithWarmup(object):
             param_group['lr'] = new_lr
             if self.verbose:
                 print('Epoch {:5d}: increasing learning rate'
-                        ' of group {} to {:.4e}.'.format(epoch, i, new_lr))
+                      ' of group {} to {:.4e}.'.format(epoch, i, new_lr))
 
     @property
     def in_cooldown(self):
@@ -232,7 +230,7 @@ class CosineAnnealingLRWithWarmup(object):
         else:
             self.min_lrs = [min_lr] * len(optimizer.param_groups)
         self.max_lrs = [lr for lr in self.min_lrs]
-        
+
         self._prepare_for_warmup()
 
     def step(self):
@@ -253,7 +251,7 @@ class CosineAnnealingLRWithWarmup(object):
             param_group['lr'] = new_lr
             if self.verbose:
                 print('Epoch {:5d}: reducing learning rate'
-                        ' of group {} to {:.4e}.'.format(epoch, i, new_lr))
+                      ' of group {} to {:.4e}.'.format(epoch, i, new_lr))
 
     def _increase_lr(self, epoch):
         # used for warmup
@@ -264,7 +262,7 @@ class CosineAnnealingLRWithWarmup(object):
             self.max_lrs[i] = max(self.max_lrs[i], new_lr)
             if self.verbose:
                 print('Epoch {:5d}: increasing learning rate'
-                        ' of group {} to {:.4e}.'.format(epoch, i, new_lr))
+                      ' of group {} to {:.4e}.'.format(epoch, i, new_lr))
 
     def _prepare_for_warmup(self):
         if self.warmup_lr is not None:
@@ -279,10 +277,9 @@ class CosineAnnealingLRWithWarmup(object):
             self.warmup_lrs = None
         if self.warmup > self.last_epoch:
             curr_lrs = [group['lr'] for group in self.optimizer.param_groups]
-            self.warmup_lr_steps = [max(0, (self.warmup_lrs[i] - curr_lrs[i])/float(self.warmup)) for i in range(len(curr_lrs))]
+            self.warmup_lr_steps = [max(0, (self.warmup_lrs[i] - curr_lrs[i]) / float(self.warmup)) for i in range(len(curr_lrs))]
         else:
             self.warmup_lr_steps = None
-
 
     def state_dict(self):
         return {key: value for key, value in self.__dict__.items() if key != 'optimizer'}

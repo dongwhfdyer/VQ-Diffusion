@@ -13,6 +13,7 @@ from image_synthesis.modeling.codecs.base_codec import BaseCodec
 from image_synthesis.modeling.utils.misc import mask_with_top_k, logits_top_k, get_token_type
 from image_synthesis.distributed.distributed import all_reduce
 
+
 # class for quantization
 # class for quantization
 class EMAVectorQuantizer(nn.Module):
@@ -28,19 +29,19 @@ class EMAVectorQuantizer(nn.Module):
     """
 
     def __init__(self, n_e, e_dim, beta,
-                masked_n_e_ratio=0,#1.0/4, 
-                embed_init_scale=1.0,
-                decay = 0.99,
-                embed_ema=True,
-                get_embed_type='retrive',
-                distance_type='euclidean',
-        ):
+                 masked_n_e_ratio=0,  # 1.0/4,
+                 embed_init_scale=1.0,
+                 decay=0.99,
+                 embed_ema=True,
+                 get_embed_type='retrive',
+                 distance_type='euclidean',
+                 ):
         super(EMAVectorQuantizer, self).__init__()
         self.n_e = n_e
         self.masked_n_e_ratio = masked_n_e_ratio
         self.e_dim = e_dim
         self.beta = beta
-        self.decay = decay 
+        self.decay = decay
         self.embed_ema = embed_ema
 
         self.get_embed_type = get_embed_type
@@ -66,14 +67,14 @@ class EMAVectorQuantizer(nn.Module):
     @property
     def norm_feat(self):
         return self.distance_type in ['cosine', 'sinkhorn']
-    
+
     @property
     def embed_weight(self):
         if isinstance(self.embedding, nn.Embedding):
             return self.embedding.weight
         else:
             return self.embedding
-    
+
     def norm_embedding(self):
         if self.training:
             with torch.no_grad():
@@ -84,7 +85,6 @@ class EMAVectorQuantizer(nn.Module):
                 else:
                     self.embedding.copy_(w)
 
-
     def _quantize(self, z, token_type=None):
         """
             z: L x D
@@ -92,27 +92,27 @@ class EMAVectorQuantizer(nn.Module):
         """
         if self.distance_type == 'euclidean':
             d = torch.sum(z ** 2, dim=1, keepdim=True) + \
-                torch.sum(self.embed_weight**2, dim=1) - 2 * \
+                torch.sum(self.embed_weight ** 2, dim=1) - 2 * \
                 torch.matmul(z, self.embed_weight.t())
         elif self.distance_type == 'cosine':
-            d = 0 - torch.einsum('ld,nd->ln', z, self.embed_weight) # BHW x N
+            d = 0 - torch.einsum('ld,nd->ln', z, self.embed_weight)  # BHW x N
         else:
             raise NotImplementedError('distance not implemented for {}'.format(self.distance_type))
 
         # find closest encodings 
         # import pdb; pdb.set_trace()
         if token_type is None or self.masked_embed_start == self.n_e:
-            min_encoding_indices = torch.argmin(d, dim=1) # L
+            min_encoding_indices = torch.argmin(d, dim=1)  # L
         else:
             min_encoding_indices = torch.zeros(z.shape[0]).long().to(z.device)
             idx = token_type == 1
             if idx.sum() > 0:
-                d_ = d[idx][:, :self.masked_embed_start] # l x n
+                d_ = d[idx][:, :self.masked_embed_start]  # l x n
                 indices_ = torch.argmin(d_, dim=1)
                 min_encoding_indices[idx] = indices_
             idx = token_type != 1
             if idx.sum() > 0:
-                d_ = d[idx][:, self.masked_embed_start:] # l x n
+                d_ = d[idx][:, self.masked_embed_start:]  # l x n
                 indices_ = torch.argmin(d_, dim=1) + self.masked_embed_start
                 min_encoding_indices[idx] = indices_
 
@@ -120,9 +120,9 @@ class EMAVectorQuantizer(nn.Module):
             min_encodings = torch.zeros(min_encoding_indices.shape[0], self.n_e).to(z)
             min_encodings.scatter_(1, min_encoding_indices.unsqueeze(1), 1)
             # import pdb; pdb.set_trace()
-            z_q = torch.matmul(min_encodings, self.embed_weight)#.view(z.shape)
+            z_q = torch.matmul(min_encodings, self.embed_weight)  # .view(z.shape)
         elif self.get_embed_type == 'retrive':
-            z_q = F.embedding(min_encoding_indices, self.embed_weight)#.view(z.shape)
+            z_q = F.embedding(min_encoding_indices, self.embed_weight)  # .view(z.shape)
         else:
             raise NotImplementedError
 
@@ -135,28 +135,28 @@ class EMAVectorQuantizer(nn.Module):
         """
         if self.distance_type in ['sinkhorn', 'cosine']:
             # need to norm feat and weight embedding    
-            self.norm_embedding()            
+            self.norm_embedding()
             z = F.normalize(z, dim=1, p=2)
 
         # reshape z -> (batch, height, width, channel) and flatten
         batch_size, _, height, width = z.shape
         # import pdb; pdb.set_trace()
-        z = z.permute(0, 2, 3, 1).contiguous() # B x H x W x C
-        z_flattened = z.view(-1, self.e_dim) # BHW x C
+        z = z.permute(0, 2, 3, 1).contiguous()  # B x H x W x C
+        z_flattened = z.view(-1, self.e_dim)  # BHW x C
         if token_type is not None:
             token_type_flattened = token_type.view(-1)
         else:
             token_type_flattened = None
 
         z_q, min_encoding_indices = self._quantize(z_flattened, token_type_flattened)
-        z_q = z_q.view(batch_size, height, width, -1) #.permute(0, 2, 3, 1).contiguous()
+        z_q = z_q.view(batch_size, height, width, -1)  # .permute(0, 2, 3, 1).contiguous()
 
         if self.training and self.embed_ema:
             # import pdb; pdb.set_trace()
             assert self.distance_type in ['euclidean', 'cosine']
-            indices_onehot = F.one_hot(min_encoding_indices, self.n_e).to(z_flattened.dtype) # L x n_e
-            indices_onehot_sum = indices_onehot.sum(0) # n_e
-            z_sum = (z_flattened.transpose(0, 1) @ indices_onehot).transpose(0, 1) # n_e x D
+            indices_onehot = F.one_hot(min_encoding_indices, self.n_e).to(z_flattened.dtype)  # L x n_e
+            indices_onehot_sum = indices_onehot.sum(0)  # n_e
+            z_sum = (z_flattened.transpose(0, 1) @ indices_onehot).transpose(0, 1)  # n_e x D
 
             all_reduce(indices_onehot_sum)
             all_reduce(z_sum)
@@ -173,7 +173,7 @@ class EMAVectorQuantizer(nn.Module):
             loss = (z_q.detach() - z).pow(2).mean()
         else:
             # compute loss for embedding
-            loss = torch.mean((z_q.detach()-z).pow(2)) + self.beta * torch.mean((z_q - z.detach()).pow(2))
+            loss = torch.mean((z_q.detach() - z).pow(2)) + self.beta * torch.mean((z_q - z.detach()).pow(2))
 
         # preserve gradients
         z_q = z + (z_q - z).detach()
@@ -198,7 +198,6 @@ class EMAVectorQuantizer(nn.Module):
 
         return output
 
-
     def only_get_indices(self, z, token_type=None):
         """
             z: B x C x H x W
@@ -206,14 +205,14 @@ class EMAVectorQuantizer(nn.Module):
         """
         if self.distance_type in ['sinkhorn', 'cosine']:
             # need to norm feat and weight embedding    
-            self.norm_embedding()            
+            self.norm_embedding()
             z = F.normalize(z, dim=1, p=2)
 
         # reshape z -> (batch, height, width, channel) and flatten
         batch_size, _, height, width = z.shape
         # import pdb; pdb.set_trace()
-        z = z.permute(0, 2, 3, 1).contiguous() # B x H x W x C
-        z_flattened = z.view(-1, self.e_dim) # BHW x C
+        z = z.permute(0, 2, 3, 1).contiguous()  # B x H x W x C
+        z_flattened = z.view(-1, self.e_dim)  # BHW x C
         if token_type is not None:
             token_type_flattened = token_type.view(-1)
         else:
@@ -222,7 +221,7 @@ class EMAVectorQuantizer(nn.Module):
         _, min_encoding_indices = self._quantize(z_flattened, token_type_flattened)
         min_encoding_indices = min_encoding_indices.view(batch_size, height, width)
 
-        return min_encoding_indices 
+        return min_encoding_indices
 
     def get_codebook_entry(self, indices, shape):
         # import pdb; pdb.set_trace()
@@ -230,7 +229,7 @@ class EMAVectorQuantizer(nn.Module):
         # shape specifying (batch, height, width)
         if self.get_embed_type == 'matmul':
             min_encodings = torch.zeros(indices.shape[0], self.n_e).to(indices)
-            min_encodings.scatter_(1, indices[:,None], 1)
+            min_encodings.scatter_(1, indices[:, None], 1)
             # get quantized latent vectors
             z_q = torch.matmul(min_encodings.float(), self.embed_weight)
         elif self.get_embed_type == 'retrive':
@@ -239,20 +238,23 @@ class EMAVectorQuantizer(nn.Module):
             raise NotImplementedError
 
         if shape is not None:
-            z_q = z_q.view(*shape, -1) # B x H x W x C
+            z_q = z_q.view(*shape, -1)  # B x H x W x C
 
             if len(z_q.shape) == 4:
                 # reshape back to match original input shape
                 z_q = z_q.permute(0, 3, 1, 2).contiguous()
         return z_q
 
+
 # blocks for encoder and decoder
 def Normalize(in_channels):
     return torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
 
+
 def nonlinearity(x):
     # swish
-    return x*torch.sigmoid(x)
+    return x * torch.sigmoid(x)
+
 
 class Upsample(nn.Module):
     def __init__(self, in_channels, with_conv, upsample_type='interpolate'):
@@ -276,6 +278,7 @@ class Upsample(nn.Module):
         if self.with_conv:
             x = self.conv(x)
         return x
+
 
 class ResnetBlock(nn.Module):
     def __init__(self, *, in_channels, out_channels=None, conv_shortcut=False,
@@ -323,7 +326,7 @@ class ResnetBlock(nn.Module):
         h = self.conv1(h)
 
         if temb is not None:
-            h = h + self.temb_proj(nonlinearity(temb))[:,:,None,None]
+            h = h + self.temb_proj(nonlinearity(temb))[:, :, None, None]
 
         h = self.norm2(h)
         h = nonlinearity(h)
@@ -336,7 +339,8 @@ class ResnetBlock(nn.Module):
             else:
                 x = self.nin_shortcut(x)
 
-        return x+h
+        return x + h
+
 
 class AttnBlock(nn.Module):
     def __init__(self, in_channels):
@@ -365,7 +369,6 @@ class AttnBlock(nn.Module):
                                         stride=1,
                                         padding=0)
 
-
     def forward(self, x):
         h_ = x
         h_ = self.norm(h_)
@@ -374,23 +377,24 @@ class AttnBlock(nn.Module):
         v = self.v(h_)
 
         # compute attention
-        b,c,h,w = q.shape
-        q = q.reshape(b,c,h*w)
-        q = q.permute(0,2,1)   # b,hw,c
-        k = k.reshape(b,c,h*w) # b,c,hw
-        w_ = torch.bmm(q,k)     # b,hw,hw    w[b,i,j]=sum_c q[b,i,c]k[b,c,j]
-        w_ = w_ * (int(c)**(-0.5))
+        b, c, h, w = q.shape
+        q = q.reshape(b, c, h * w)
+        q = q.permute(0, 2, 1)  # b,hw,c
+        k = k.reshape(b, c, h * w)  # b,c,hw
+        w_ = torch.bmm(q, k)  # b,hw,hw    w[b,i,j]=sum_c q[b,i,c]k[b,c,j]
+        w_ = w_ * (int(c) ** (-0.5))
         w_ = torch.nn.functional.softmax(w_, dim=2)
 
         # attend to values
-        v = v.reshape(b,c,h*w)
-        w_ = w_.permute(0,2,1)   # b,hw,hw (first hw of k, second of q)
-        h_ = torch.bmm(v,w_)     # b, c,hw (hw of q) h_[b,c,j] = sum_i v[b,c,i] w_[b,i,j]
-        h_ = h_.reshape(b,c,h,w)
+        v = v.reshape(b, c, h * w)
+        w_ = w_.permute(0, 2, 1)  # b,hw,hw (first hw of k, second of q)
+        h_ = torch.bmm(v, w_)  # b, c,hw (hw of q) h_[b,c,j] = sum_i v[b,c,i] w_[b,i,j]
+        h_ = h_.reshape(b, c, h, w)
 
         h_ = self.proj_out(h_)
 
-        return x+h_
+        return x + h_
+
 
 class Downsample(nn.Module):
     def __init__(self, in_channels, with_conv):
@@ -406,27 +410,27 @@ class Downsample(nn.Module):
 
     def forward(self, x):
         if self.with_conv:
-            pad = (0,1,0,1)
+            pad = (0, 1, 0, 1)
             x = torch.nn.functional.pad(x, pad, mode="constant", value=0)
             x = self.conv(x)
         else:
             x = torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
         return x
 
+
 class Encoder(nn.Module):
-    def __init__(self, *, ch, out_ch, ch_mult=(1,2,4,8), scale_by_2=None, num_res_blocks,
+    def __init__(self, *, ch, out_ch, ch_mult=(1, 2, 4, 8), scale_by_2=None, num_res_blocks,
                  attn_resolutions, dropout=0.0, resamp_with_conv=True, in_channels,
                  resolution, z_channels, double_z=False, **ignore_kwargs):
         super().__init__()
-        
 
         if isinstance(resolution, int):
-            resolution = [resolution, resolution] # H, W
+            resolution = [resolution, resolution]  # H, W
         elif isinstance(resolution, (tuple, list)):
             resolution = list(resolution)
         else:
             raise ValueError('Unknown type of resolution:', resolution)
-            
+
         attn_resolutions_ = []
         for ar in attn_resolutions:
             if isinstance(ar, (list, tuple)):
@@ -434,7 +438,7 @@ class Encoder(nn.Module):
             else:
                 attn_resolutions_.append([ar, ar])
         attn_resolutions = attn_resolutions_
-        
+
         self.ch = ch
         self.temb_ch = 0
         self.num_resolutions = len(ch_mult)
@@ -450,13 +454,13 @@ class Encoder(nn.Module):
                                        padding=1)
 
         curr_res = resolution
-        in_ch_mult = (1,)+tuple(ch_mult)
+        in_ch_mult = (1,) + tuple(ch_mult)
         self.down = nn.ModuleList()
         for i_level in range(self.num_resolutions):
             block = nn.ModuleList()
             attn = nn.ModuleList()
-            block_in = ch*in_ch_mult[i_level]
-            block_out = ch*ch_mult[i_level]
+            block_in = ch * in_ch_mult[i_level]
+            block_out = ch * ch_mult[i_level]
             for i_block in range(self.num_res_blocks):
                 block.append(ResnetBlock(in_channels=block_in,
                                          out_channels=block_out,
@@ -470,13 +474,13 @@ class Encoder(nn.Module):
             down.attn = attn
 
             if scale_by_2 is None:
-                if i_level != self.num_resolutions-1:
+                if i_level != self.num_resolutions - 1:
                     down.downsample = Downsample(block_in, resamp_with_conv)
                     curr_res = [r // 2 for r in curr_res]
             else:
                 if scale_by_2[i_level]:
                     down.downsample = Downsample(block_in, resamp_with_conv)
-                    curr_res = [r // 2 for r in curr_res]  
+                    curr_res = [r // 2 for r in curr_res]
             self.down.append(down)
 
         # middle
@@ -494,14 +498,13 @@ class Encoder(nn.Module):
         # end
         self.norm_out = Normalize(block_in)
         self.conv_out = torch.nn.Conv2d(block_in,
-                                        2*z_channels if double_z else z_channels,
+                                        2 * z_channels if double_z else z_channels,
                                         kernel_size=3,
                                         stride=1,
                                         padding=1)
 
-
     def forward(self, x):
-        #assert x.shape[2] == self.resolution[0] and x.shape[3] == self.resolution[1], "{}, {}, {}".format(x.shape[2], x.shape[3], self.resolution)
+        # assert x.shape[2] == self.resolution[0] and x.shape[3] == self.resolution[1], "{}, {}, {}".format(x.shape[2], x.shape[3], self.resolution)
 
         # timestep embedding
         temb = None
@@ -518,7 +521,7 @@ class Encoder(nn.Module):
             if getattr(self.down[i_level], 'downsample', None) is not None:
                 h = self.down[i_level].downsample(hs[-1])
 
-            if i_level != self.num_resolutions-1:
+            if i_level != self.num_resolutions - 1:
                 # hs.append(self.down[i_level].downsample(hs[-1]))
                 hs.append(h)
 
@@ -534,19 +537,20 @@ class Encoder(nn.Module):
         h = self.conv_out(h)
         return h
 
+
 class Decoder(nn.Module):
-    def __init__(self, *, ch, out_ch, ch_mult=(1,2,4,8), scale_by_2=None, num_res_blocks,
+    def __init__(self, *, ch, out_ch, ch_mult=(1, 2, 4, 8), scale_by_2=None, num_res_blocks,
                  attn_resolutions, dropout=0.0, resamp_with_conv=True,
                  resolution, z_channels, **ignorekwargs):
         super().__init__()
-        
+
         if isinstance(resolution, int):
-            resolution = [resolution, resolution] # H, W
+            resolution = [resolution, resolution]  # H, W
         elif isinstance(resolution, (tuple, list)):
             resolution = list(resolution)
         else:
             raise ValueError('Unknown type of resolution:', resolution)
-            
+
         attn_resolutions_ = []
         for ar in attn_resolutions:
             if isinstance(ar, (list, tuple)):
@@ -559,17 +563,17 @@ class Decoder(nn.Module):
         self.temb_ch = 0
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
-        self.resolution = resolution 
+        self.resolution = resolution
         self.requires_image = False
 
         # compute in_ch_mult, block_in and curr_res at lowest res
-        in_ch_mult = (1,)+tuple(ch_mult)
-        block_in = ch*ch_mult[self.num_resolutions-1]
+        in_ch_mult = (1,) + tuple(ch_mult)
+        block_in = ch * ch_mult[self.num_resolutions - 1]
         if scale_by_2 is None:
-            curr_res = [r // 2**(self.num_resolutions-1) for r in self.resolution]
+            curr_res = [r // 2 ** (self.num_resolutions - 1) for r in self.resolution]
         else:
             scale_factor = sum([int(s) for s in scale_by_2])
-            curr_res = [r // 2**scale_factor for r in self.resolution]
+            curr_res = [r // 2 ** scale_factor for r in self.resolution]
 
         self.z_shape = (1, z_channels, curr_res[0], curr_res[1])
         print("Working with z of shape {} = {} dimensions.".format(self.z_shape, np.prod(self.z_shape)))
@@ -598,8 +602,8 @@ class Decoder(nn.Module):
         for i_level in reversed(range(self.num_resolutions)):
             block = nn.ModuleList()
             attn = nn.ModuleList()
-            block_out = ch*ch_mult[i_level]
-            for i_block in range(self.num_res_blocks+1):
+            block_out = ch * ch_mult[i_level]
+            for i_block in range(self.num_res_blocks + 1):
                 block.append(ResnetBlock(in_channels=block_in,
                                          out_channels=block_out,
                                          temb_channels=self.temb_ch,
@@ -618,7 +622,7 @@ class Decoder(nn.Module):
                 if scale_by_2[i_level]:
                     up.upsample = Upsample(block_in, resamp_with_conv)
                     curr_res = [r * 2 for r in curr_res]
-            self.up.insert(0, up) # prepend to get consistent order
+            self.up.insert(0, up)  # prepend to get consistent order
 
         # end
         self.norm_out = Normalize(block_in)
@@ -629,7 +633,7 @@ class Decoder(nn.Module):
                                         padding=1)
 
     def forward(self, z, **kwargs):
-        #assert z.shape[1:] == self.z_shape[1:]
+        # assert z.shape[1:] == self.z_shape[1:]
         self.last_z_shape = z.shape
 
         # timestep embedding
@@ -645,7 +649,7 @@ class Decoder(nn.Module):
 
         # upsampling
         for i_level in reversed(range(self.num_resolutions)):
-            for i_block in range(self.num_res_blocks+1):
+            for i_block in range(self.num_res_blocks + 1):
                 h = self.up[i_level].block[i_block](h, temb)
                 if len(self.up[i_level].attn) > 0:
                     h = self.up[i_level].attn[i_block](h)
@@ -657,6 +661,7 @@ class Decoder(nn.Module):
         h = nonlinearity(h)
         h = self.conv_out(h)
         return h
+
 
 class PatchVQGAN(BaseCodec):
     def __init__(self,
@@ -670,19 +675,19 @@ class PatchVQGAN(BaseCodec):
                  data_info={'key': 'image'},
                  quantizer_type='VQ',
                  quantizer_dis_type='euclidean',
-                 decay = 0.99,
+                 decay=0.99,
                  trainable=False,
                  ckpt_path=None,
                  token_shape=None
                  ):
         super().__init__()
-        self.encoder = instantiate_from_config(encoder_config) # Encoder(**encoder_config)
-        self.decoder = instantiate_from_config(decoder_config) # Decoder(**decoder_config)
+        self.encoder = instantiate_from_config(encoder_config)  # Encoder(**encoder_config)
+        self.decoder = instantiate_from_config(decoder_config)  # Decoder(**decoder_config)
         if quantizer_type == 'EMAVQ':
-            self.quantize = EMAVectorQuantizer(n_embed, embed_dim, beta=0.25, decay = decay, distance_type=quantizer_dis_type)
+            self.quantize = EMAVectorQuantizer(n_embed, embed_dim, beta=0.25, decay=decay, distance_type=quantizer_dis_type)
             print('using EMA vector Quantizer')
         elif quantizer_type == 'PQEMAVQ':
-            self.quantize = PQEMAVectorQuantizer(n_embed, embed_dim, beta=0.25,decay = decay, distance_type=quantizer_dis_type)
+            self.quantize = PQEMAVectorQuantizer(n_embed, embed_dim, beta=0.25, decay=decay, distance_type=quantizer_dis_type)
             print('using PQ EMA vector Quantizer')
         elif quantizer_type == 'VQ':
             self.quantize = VectorQuantizer(n_embed, embed_dim, beta=0.25)
@@ -693,15 +698,15 @@ class PatchVQGAN(BaseCodec):
         self.post_quant_conv = torch.nn.Conv2d(embed_dim, decoder_config['params']["z_channels"], 1)
 
         self.data_info = data_info
-    
+
         if lossconfig is not None and trainable:
             self.loss = instantiate_from_config(lossconfig)
         else:
             self.loss = None
-        
+
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
-        
+
         self.trainable = trainable
         self._set_trainable()
 
@@ -736,7 +741,7 @@ class PatchVQGAN(BaseCodec):
             raise ValueError('The data need to be preprocessed!')
         mask = mask.to(self.device)
         data = data * mask
-        data[~mask.repeat(1,3,1,1)] = -1.0
+        data[~mask.repeat(1, 3, 1, 1)] = -1.0
         return data
 
     def post_process(self, data):
@@ -762,10 +767,10 @@ class PatchVQGAN(BaseCodec):
         output['token'] = idx.view(idx.shape[0], -1)
 
         # import pdb; pdb.set_trace()
-        if mask is not None: # mask should be B x 1 x H x W
+        if mask is not None:  # mask should be B x 1 x H x W
             # downsampling
             # mask = F.interpolate(mask.float(), size=idx_mask.shape[-2:]).to(torch.bool)
-            token_type = get_token_type(mask, self.token_shape) # B x 1 x H x W
+            token_type = get_token_type(mask, self.token_shape)  # B x 1 x H x W
             mask = token_type == 1
             output = {
                 'target': idx.view(idx.shape[0], -1).clone(),
@@ -776,16 +781,15 @@ class PatchVQGAN(BaseCodec):
         else:
             output = {
                 'token': idx.view(idx.shape[0], -1)
-                }
+            }
 
         # get token index
         # used for computing token frequency
         if return_token_index:
-            token_index = output['token'] #.view(-1)
+            token_index = output['token']  # .view(-1)
             output['token_index'] = token_index
 
         return output
-
 
     def decode(self, token):
         assert self.token_shape is not None
@@ -801,7 +805,6 @@ class PatchVQGAN(BaseCodec):
         rec = self.post_process(rec)
         return rec
 
-
     def get_rec_loss(self, input, rec):
         if input.max() > 1:
             input = self.pre_process(input)
@@ -810,7 +813,6 @@ class PatchVQGAN(BaseCodec):
 
         rec_loss = F.mse_loss(rec, input)
         return rec_loss
-
 
     @torch.no_grad()
     def sample(self, batch):
@@ -849,10 +851,10 @@ class PatchVQGAN(BaseCodec):
             return super().parameters(recurse=recurse)
         else:
             if name == 'generator':
-                params = list(self.encoder.parameters())+ \
-                         list(self.decoder.parameters())+\
-                         list(self.quantize.parameters())+\
-                         list(self.quant_conv.parameters())+\
+                params = list(self.encoder.parameters()) + \
+                         list(self.decoder.parameters()) + \
+                         list(self.quantize.parameters()) + \
+                         list(self.quant_conv.parameters()) + \
                          list(self.post_quant_conv.parameters())
             elif name == 'discriminator':
                 params = self.loss.discriminator.parameters()
@@ -861,7 +863,7 @@ class PatchVQGAN(BaseCodec):
             return params
 
     def forward(self, batch, name='none', return_loss=True, step=0, **kwargs):
-        
+
         if name == 'generator':
             input = self.pre_process(batch[self.data_info['key']])
             x = self.encoder(input)
@@ -877,27 +879,27 @@ class PatchVQGAN(BaseCodec):
             else:
                 rec = self.decoder(quant)
             # save some tensors for 
-            self.input_tmp = input 
-            self.rec_tmp = rec 
+            self.input_tmp = input
+            self.rec_tmp = rec
 
             if isinstance(self.loss, VQLPIPSWithDiscriminator):
                 output = self.loss(codebook_loss=emb_loss,
-                                inputs=input, 
-                                reconstructions=rec, 
-                                optimizer_name=name, 
-                                global_step=step, 
-                                last_layer=self.get_last_layer())
+                                   inputs=input,
+                                   reconstructions=rec,
+                                   optimizer_name=name,
+                                   global_step=step,
+                                   last_layer=self.get_last_layer())
             else:
                 raise NotImplementedError('{}'.format(type(self.loss)))
 
         elif name == 'discriminator':
             if isinstance(self.loss, VQLPIPSWithDiscriminator):
                 output = self.loss(codebook_loss=None,
-                                inputs=self.input_tmp, 
-                                reconstructions=self.rec_tmp, 
-                                optimizer_name=name, 
-                                global_step=step, 
-                                last_layer=self.get_last_layer())
+                                   inputs=self.input_tmp,
+                                   reconstructions=self.rec_tmp,
+                                   optimizer_name=name,
+                                   global_step=step,
+                                   last_layer=self.get_last_layer())
             else:
                 raise NotImplementedError('{}'.format(type(self.loss)))
         else:

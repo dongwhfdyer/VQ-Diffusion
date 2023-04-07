@@ -4,19 +4,20 @@ from image_synthesis.modeling.modules.clip.clip import tokenize
 from image_synthesis.modeling.codecs.base_codec import BaseCodec
 from image_synthesis.utils.misc import instantiate_from_config
 
+
 class Tokenize(BaseCodec):
-    def __init__(self, context_length:int = 256,
-                 add_start_and_end:bool = False,
-                 just_token = False,
-                 with_mask:bool = True,
-                 pad_value:int = 0,
-                 clip_embedding = False,
-                 condition_emb_config = None,
+    def __init__(self, context_length: int = 256,
+                 add_start_and_end: bool = False,
+                 just_token=False,
+                 with_mask: bool = True,
+                 pad_value: int = 0,
+                 clip_embedding=False,
+                 condition_emb_config=None,
                  tokenizer_config={
                      'target': 'image_synthesis.modeling.modules.clip.simple_tokenizer.SimpleTokenizer',
-                     'params':{
-                        'end_idx': 49152 # 16384 fo DALL-E
-                        },
+                     'params': {
+                         'end_idx': 49152  # 16384 fo DALL-E
+                     },
                  },
                  ):
         """
@@ -47,27 +48,27 @@ class Tokenize(BaseCodec):
             self.condition_emb = instantiate_from_config(condition_emb_config)
 
         self.tokenizer = instantiate_from_config(tokenizer_config)
-    
+
     def __repr__(self):
-        rep = "Tokenize for text\n\tcontent_length: {}\n\tadd_start_and_end: {}\n\twith_mask: {}"\
-                .format(self.context_length, self.add_start_and_end, self.with_mask)
+        rep = "Tokenize for text\n\tcontent_length: {}\n\tadd_start_and_end: {}\n\twith_mask: {}" \
+            .format(self.context_length, self.add_start_and_end, self.with_mask)
         return rep
 
     def check_length(self, token):
         return len(token) <= self.context_length
 
     def get_tokens(self, text, **kwargs):
-        text_token = tokenize(text, context_length=self.context_length, 
-                         add_start_and_end=self.add_start_and_end,
-                         with_mask=self.with_mask, pad_value=self.pad_value,
-                         tokenizer=self.tokenizer,
-                         just_token=self.just_token)
+        text_token = tokenize(text, context_length=self.context_length,
+                              add_start_and_end=self.add_start_and_end,
+                              with_mask=self.with_mask, pad_value=self.pad_value,
+                              tokenizer=self.tokenizer,
+                              just_token=self.just_token)
         if self.clip_embedding == False:
             return text_token
         else:
             if self.condition_emb.additional_last_embedding == True:
                 with torch.no_grad():
-                    cond_emb, last_embedding = self.condition_emb(text_token['token'].cuda()) 
+                    cond_emb, last_embedding = self.condition_emb(text_token['token'].cuda())
                     text_token['embed_token'] = cond_emb.detach()
                     text_token['last_embed'] = last_embedding
             else:
@@ -76,8 +77,3 @@ class Tokenize(BaseCodec):
                     text_token['embed_token'] = cond_emb.detach()
 
             return text_token
-
-
-
-
-

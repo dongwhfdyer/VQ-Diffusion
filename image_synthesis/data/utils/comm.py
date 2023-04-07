@@ -7,6 +7,8 @@ import pickle
 
 import torch
 import torch.distributed as dist
+
+
 # from diffdist.functional import all_gather as better_all_gather
 
 
@@ -52,7 +54,7 @@ class Comm(object):
     @property
     def head(self):
         return 'Rank[{}/{}]'.format(self.rank, self.world_size)
-   
+
     def is_main_process(self):
         return self.rank == 0
 
@@ -157,6 +159,7 @@ def gather_tensors(tensor):
     output = torch.cat(tensors_gather, dim=0)
     return output
 
+
 def gather_tensors_fake(tensor):
     """
     Performs all_gather operation on the provided tensors.
@@ -171,27 +174,28 @@ def gather_tensors_fake(tensor):
     # need to do this to restore propagation of the gradients
     tensors_gather[comm.rank] = tensor
     output = torch.cat(tensors_gather, dim=0)
-    output = torch.cat([output,output.detach()],0)
+    output = torch.cat([output, output.detach()], 0)
     return output
+
 
 def gather_nearby_tensors(tensor):
     """
     Performs all_gather operation on the provided tensors.
     *** Warning ***: torch.distributed.all_gather has no gradient.
     """
-    step=comm.rank//2
-    if comm.rank%2==0:
-        nearby_rank=step*2+1
+    step = comm.rank // 2
+    if comm.rank % 2 == 0:
+        nearby_rank = step * 2 + 1
     else:
-        nearby_rank=step*2
-    cpu_tensor=tensor
+        nearby_rank = step * 2
+    cpu_tensor = tensor
     tensors_gather = [
         torch.ones_like(cpu_tensor)
         for _ in range(comm.world_size)
     ]
     dist.all_gather(tensors_gather, cpu_tensor, async_op=False)
     # need to do this to restore propagation of the gradients
-    tensors_gather=[tensors_gather[nearby_rank].to(tensor.device),tensor]
+    tensors_gather = [tensors_gather[nearby_rank].to(tensor.device), tensor]
     output = torch.cat(tensors_gather, dim=0)
     return output
 
@@ -208,21 +212,23 @@ def gather_tensors_with_gradient(x):
     out_list = better_all_gather(out_list, x)
     return torch.cat(out_list, dim=0)
 
-gather_funcs={
-    "ALL":gather_tensors,
-    "NEAR":gather_nearby_tensors,
-    "GRAD":gather_tensors_with_gradient,
-    "FAKE":gather_tensors_fake
+
+gather_funcs = {
+    "ALL": gather_tensors,
+    "NEAR": gather_nearby_tensors,
+    "GRAD": gather_tensors_with_gradient,
+    "FAKE": gather_tensors_fake
 }
 
 from contextlib import contextmanager
+
 
 @contextmanager
 def torch_distributed_zero_first():
     """
     Decorator to make all processes in distributed training wait for each local_master to do something.
     """
-    local_rank=comm.local_rank
+    local_rank = comm.local_rank
     if local_rank not in [-1, 0]:
         dist.barrier(device_ids=[local_rank])
     yield

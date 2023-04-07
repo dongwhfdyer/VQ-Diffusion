@@ -7,6 +7,7 @@ from torch import multiprocessing as mp
 # import distributed as dist_fn
 import image_synthesis.distributed.distributed as dist_fn
 
+
 def find_free_port():
     import socket
 
@@ -51,7 +52,7 @@ def launch(fn, n_gpu_per_machine, n_machine=1, machine_rank=0, dist_url=None, ar
 
 
 def distributed_worker(
-    local_rank, fn, world_size, n_gpu_per_machine, machine_rank, dist_url, args
+        local_rank, fn, world_size, n_gpu_per_machine, machine_rank, dist_url, args
 ):
     if not torch.cuda.is_available():
         raise OSError("CUDA is not available. Please check your environments")

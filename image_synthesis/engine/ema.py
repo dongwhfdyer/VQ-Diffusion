@@ -1,10 +1,11 @@
 import torch
 import copy
 
+
 class EMA(object):
-    def __init__(self, 
-                 model, 
-                 decay=0.99, 
+    def __init__(self,
+                 model,
+                 decay=0.99,
                  update_interval=1,
                  device=torch.device('cpu')):
 
@@ -18,9 +19,9 @@ class EMA(object):
                 self.ema_model = copy.deepcopy(model.get_ema_model())
                 self.cur_state_dict = model.get_ema_model().state_dict()
             else:
-                self.ema_model = copy.deepcopy(model)  
+                self.ema_model = copy.deepcopy(model)
                 self.cur_state_dict = model.state_dict()
-        self.ema_model.to(self.device) 
+        self.ema_model.to(self.device)
         self.cur_state_dict = {k: v.clone().to(self.device) for k, v in self.cur_state_dict.items()}
 
     def update(self, iteration):
@@ -33,12 +34,12 @@ class EMA(object):
 
             ema_state_dict = self.ema_model.state_dict()
             for k in ema_state_dict.keys():
-                ema_state_dict[k] = ema_state_dict[k] * self.decay + cur_state_dict[k].clone().to(self.device) * (1-self.decay)
+                ema_state_dict[k] = ema_state_dict[k] * self.decay + cur_state_dict[k].clone().to(self.device) * (1 - self.decay)
             self.ema_model.load_state_dict(ema_state_dict)
 
     def state_dict(self):
         return self.ema_model.state_dict()
-    
+
     def load_state_dict(self, state_dict, strict=True):
         state_dict_ = {k: v.clone().to(self.device) for k, v in state_dict.items()}
         self.ema_model.load_state_dict(state_dict_, strict=strict)
@@ -64,5 +65,3 @@ class EMA(object):
             self.model.get_ema_model().load_state_dict(self.cur_state_dict)
         else:
             self.model.load_state_dict(self.cur_state_dict)
-
-

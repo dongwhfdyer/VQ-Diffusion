@@ -16,13 +16,14 @@ import os
 
 from torch.cuda.amp import autocast
 
+
 class UC_DALLE(nn.Module):
     def __init__(
-        self,
-        *,
-        content_info={'key': 'image'},
-        content_codec_config,
-        diffusion_config
+            self,
+            *,
+            content_info={'key': 'image'},
+            content_codec_config,
+            diffusion_config
     ):
         super().__init__()
         self.content_info = content_info
@@ -37,7 +38,7 @@ class UC_DALLE(nn.Module):
             names = name.split('+')
             params = []
             for n in names:
-                try: # the parameters() method is not overwritten for some classes
+                try:  # the parameters() method is not overwritten for some classes
                     params += getattr(self, name).parameters(recurse=recurse, name=name)
                 except:
                     params += getattr(self, name).parameters(recurse=recurse)
@@ -67,7 +68,7 @@ class UC_DALLE(nn.Module):
             v = v.to(self.device) if torch.is_tensor(v) else v
             cont_['content_' + k] = v
         return cont_
-    
+
     @torch.no_grad()
     def prepare_input(self, batch):
         input = self.prepare_content(batch)
@@ -78,47 +79,50 @@ class UC_DALLE(nn.Module):
             truncation_k = int(sample_type[:-1].replace('top', ''))
             content_codec = self.content_codec
             save_path = self.this_save_path
+
             def wrapper(*args, **kwards):
                 out = func(*args, **kwards)
-                val, ind = out.topk(k = truncation_k, dim=1)
+                val, ind = out.topk(k=truncation_k, dim=1)
                 probs = torch.full_like(out, -70)
                 probs.scatter_(1, ind, val)
                 return probs
+
             return wrapper
         elif sample_type[-1] == 'r':
             truncation_r = float(sample_type[:-1].replace('top', ''))
+
             def wrapper(*args, **kwards):
                 out = func(*args, **kwards)
                 temp, indices = torch.sort(out, 1, descending=True)
                 temp1 = torch.exp(temp)
                 temp2 = temp1.cumsum(dim=1)
                 temp3 = temp2 < truncation_r
-                new_temp = torch.full_like(temp3[:,0:1,:], True)
+                new_temp = torch.full_like(temp3[:, 0:1, :], True)
                 temp6 = torch.cat((new_temp, temp3), dim=1)
-                temp3 = temp6[:,:-1,:]
+                temp3 = temp6[:, :-1, :]
                 temp4 = temp3.gather(1, indices.argsort(1))
-                temp5 = temp4.float()*out+(1-temp4.float())*(-70)
+                temp5 = temp4.float() * out + (1 - temp4.float()) * (-70)
                 probs = temp5
                 return probs
+
             return wrapper
         else:
             print("wrong sample type")
 
-
     @torch.no_grad()
     def generate_content(
-        self,
-        *,
-        batch,
-        filter_ratio = 0.5,
-        temperature = 1.0,
-        content_ratio = 0.0,
-        replicate=1,
-        return_att_weight=False,
-        sample_type="normal",
+            self,
+            *,
+            batch,
+            filter_ratio=0.5,
+            temperature=1.0,
+            content_ratio=0.0,
+            replicate=1,
+            return_att_weight=False,
+            sample_type="normal",
     ):
         self.eval()
-        
+
         content_token = None
 
         if sample_type.split(',')[0][:3] == "top" and self.truncation_forward == False:
@@ -136,8 +140,8 @@ class UC_DALLE(nn.Module):
                                             print_log=False,
                                             sample_type=sample_type,
                                             batch_size=replicate)
-        
-        content = self.content_codec.decode(trans_out['content_token'])  #(8,1024)->(8,3,256,256)
+
+        content = self.content_codec.decode(trans_out['content_token'])  # (8,1024)->(8,3,256,256)
         self.train()
         out = {
             'content': content
@@ -147,8 +151,8 @@ class UC_DALLE(nn.Module):
 
     @torch.no_grad()
     def reconstruct(
-        self,
-        input
+            self,
+            input
     ):
         if torch.is_tensor(input):
             input = input.to(self.device)
@@ -162,26 +166,26 @@ class UC_DALLE(nn.Module):
 
     @torch.no_grad()
     def sample(
-        self,
-        batch,
-        clip = None,
-        temperature = 1.,
-        return_rec = True,
-        filter_ratio = [0],
-        content_ratio = [1], # the ratio to keep the encoded content tokens
-        return_att_weight=False,
-        return_logits=False,
-        sample_type="normal",
-        **kwargs,
+            self,
+            batch,
+            clip=None,
+            temperature=1.,
+            return_rec=True,
+            filter_ratio=[0],
+            content_ratio=[1],  # the ratio to keep the encoded content tokens
+            return_att_weight=False,
+            return_logits=False,
+            sample_type="normal",
+            **kwargs,
     ):
         self.eval()
         content = self.prepare_content(batch)
 
         content_samples = {'input_image': batch[self.content_info['key']]}
         if return_rec:
-            content_samples['reconstruction_image'] = self.content_codec.decode(content['content_token'])  
+            content_samples['reconstruction_image'] = self.content_codec.decode(content['content_token'])
 
-        # import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
 
         for fr in filter_ratio:
             for cr in content_ratio:
@@ -190,7 +194,7 @@ class UC_DALLE(nn.Module):
                     continue
                 else:
                     content_token = content['content_token'][:, :num_content_tokens]
-                
+
                 trans_out = self.transformer.sample(condition_token=None,
                                                     condition_mask=None,
                                                     condition_embed=None,
@@ -208,16 +212,16 @@ class UC_DALLE(nn.Module):
 
                 if return_logits:
                     content_samples['logits'] = trans_out['logits']
-        self.train() 
-        output = {}   
+        self.train()
+        output = {}
         output.update(content_samples)
         return output
 
     def forward(
-        self,
-        batch,
-        name='none',
-        **kwargs
+            self,
+            batch,
+            name='none',
+            **kwargs
     ):
         input = self.prepare_input(batch)
         output = self.transformer(input, **kwargs)
